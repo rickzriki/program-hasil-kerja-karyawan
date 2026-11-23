@@ -748,10 +748,9 @@ export default function Page() {
 
   const tabs = [
     { id: 'beranda', label: 'Beranda' },
-    { id: 'karyawan', label: 'Karyawan' },
     { id: 'input', label: 'Input Hasil' },
-    { id: 'rekap', label: 'Hasil (Rekap)' },
     { id: 'driver', label: 'Driver' },
+    { id: 'rekap', label: 'Hasil (Rekap)' },
   ];
 
   return (
@@ -834,19 +833,6 @@ export default function Page() {
               <p style={S.lead}>{entries.length} catatan · terbaru di atas</p>
               {!historySorted.length && <div style={S.empty}>Belum ada catatan hasil kerja.</div>}
               {historySorted.map((e) => entryCard(e, true, startEditEntry, deleteEntry))}
-            </div>
-          )}
-
-          {/* ============ KARYAWAN ============ */}
-          {tab === 'karyawan' && (
-            <div>
-              <h1 style={S.h1}>Daftar Karyawan</h1>
-              <p style={S.lead}>{employees.length} karyawan PT. Meleo Mahkota Abadi</p>
-              <div style={{ ...S.panel, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-                {employees.map((n) => (
-                  <div key={n} style={{ padding: '10px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, fontWeight: 600, fontSize: 14 }}>{n}</div>
-                ))}
-              </div>
             </div>
           )}
 
