@@ -59,6 +59,13 @@ function weekRange(dateStr) {
   const start = shiftDateStr(dateStr, -sinceMonday);
   return { start, end: shiftDateStr(start, 6) };
 }
+function monthRange(dateStr) {
+  const start = `${dateStr.slice(0, 8)}01`;
+  const y = Number(dateStr.slice(0, 4));
+  const m = Number(dateStr.slice(5, 7));
+  const nmFirst = m === 12 ? `${y + 1}-01-01` : `${dateStr.slice(0, 5)}${pad(m + 1)}-01`;
+  return { start, end: shiftDateStr(nmFirst, -1) };
+}
 
 /* ---------- Aturan jendela input ----------
    Shift 1 (07.30–20.30): diisi pada tanggal kerja itu sendiri, tutup 21.00 WIB.
@@ -255,7 +262,7 @@ export default function Page() {
 
   // Beranda & Rekap
   const [leadPeriod, setLeadPeriod] = useState('hari'); // hari | minggu | bulan
-  const [rekapMode, setRekapMode] = useState('day'); // day | week
+  const [rekapMode, setRekapMode] = useState('day'); // day | week | month
   const [rdate, setRdate] = useState('');
   const [rsearch, setRsearch] = useState('');
   const [rmachine, setRmachine] = useState('');
@@ -504,9 +511,16 @@ export default function Page() {
       for (let i = 0; i < 7; i++) dates.push(shiftDateStr(w.start, i));
       return { mode: 'week', base, start: w.start, end: w.end, dates, label: `${fmtDateLong(w.start)} – ${fmtDateLong(w.end)}` };
     }
+    if (rekapMode === 'month') {
+      const m = monthRange(base);
+      const dates = [];
+      let d = m.start;
+      while (d <= m.end) { dates.push(d); d = shiftDateStr(d, 1); }
+      return { mode: 'month', base, start: m.start, end: m.end, dates, label: `${MONTH_NAMES[Number(base.slice(5, 7)) - 1]} ${base.slice(0, 4)}` };
+    }
     return { mode: 'day', base, start: base, end: base, dates: [base], label: fmtDateLong(base) };
   }, [rekapMode, rdate]);
-  const periodFileSlug = period.mode === 'week' ? `mingguan-${period.start}-sd-${period.end}` : period.start;
+  const periodFileSlug = period.mode === 'week' ? `mingguan-${period.start}-sd-${period.end}` : period.mode === 'month' ? `bulanan-${period.start.slice(0, 7)}` : period.start;
   const qName = rsearch.trim().toLowerCase();
   const qMachine = rmachine.trim().toLowerCase();
   const matchesSearch = (e) => {
@@ -534,10 +548,14 @@ export default function Page() {
   /* ---------- Laporan & unduhan (mengikuti periode + filter aktif) ---------- */
   function buildReport() {
     const isWeek = period.mode === 'week';
+    const isMonth = period.mode === 'month';
+    const isMulti = isWeek || isMonth;
     const lines = [];
-    lines.push(isWeek
+    lines.push(period.mode === 'week'
       ? `👷 Laporan Hasil Kerja — Per Minggu (Senin–Minggu) — ${period.label}`
-      : `👷 Laporan Hasil Kerja — Per Hari — ${period.label}`);
+      : period.mode === 'month'
+        ? `👷 Laporan Hasil Kerja — Per Bulan — ${period.label}`
+        : `👷 Laporan Hasil Kerja — Per Hari — ${period.label}`);
     if (qName) lines.push(`🔎 Pencarian nama karyawan: “${rsearch.trim()}” — hanya catatan yang memuat nama itu.`);
     if (qMachine) lines.push(`🔎 Pencarian nama mesin: “${rmachine.trim()}” — hanya catatan dengan nama mesin itu.`);
     lines.push('');
@@ -546,7 +564,7 @@ export default function Page() {
       lines.push('');
       if (!list.length) { lines.push('Tidak ada catatan.'); lines.push(''); return; }
       list.forEach((e, i) => {
-        const parts = [`${i + 1}. ${isWeek ? `[${e.date}] ` : ''}${e.machine ? `Mesin: ${e.machine} — ` : ''}${e.job} — ${e.names.join(', ')} — Shift ${e.shift}${e.time ? ` — Pukul ${e.time.replace(':', '.')}` : ''}`];
+        const parts = [`${i + 1}. ${isMulti ? `[${e.date}] ` : ''}${e.machine ? `Mesin: ${e.machine} — ` : ''}${e.job} — ${e.names.join(', ')} — Shift ${e.shift}${e.time ? ` — Pukul ${e.time.replace(':', '.')}` : ''}`];
         if (e.note) parts.push(`Keterangan: ${e.note}`);
         parts.push(`Hasil: ${e.qty !== null && e.qty !== undefined ? `${fmtNum(e.qty)} ${e.unit}` : 'tanpa hasil (keterangan saja)'}`);
         lines.push(parts.join(' — '));
@@ -558,7 +576,7 @@ export default function Page() {
     if (s2.length && !s1.length) block('Shift 2', s2);
     else if (s1.length && s2.length) { block('Shift 1', s1); block('Shift 2', s2); }
     else block('Shift 1', s1);
-    lines.push(isWeek ? '🏆 Peringkat minggu ini (per satuan):' : '🏆 Peringkat hari ini (per satuan):');
+    lines.push(isWeek ? '🏆 Peringkat minggu ini (per satuan):' : isMonth ? '🏆 Peringkat bulan ini (per satuan):' : '🏆 Peringkat hari ini (per satuan):');
     let anyRank = false;
     rekapRank.forEach(({ unit, groups }) => {
       anyRank = true;
@@ -567,9 +585,9 @@ export default function Page() {
     if (!anyRank) lines.push('Belum ada hasil terukur.');
     lines.push('');
     lines.push('🚚 Pengiriman Driver');
-    if (!periodDrivers.length) lines.push(isWeek ? 'Minggu ini tidak ada pengiriman driver yang dicatat.' : 'Hari ini tidak ada pengiriman driver yang dicatat.');
+    if (!periodDrivers.length) lines.push(isWeek ? 'Minggu ini tidak ada pengiriman driver yang dicatat.' : isMonth ? 'Bulan ini tidak ada pengiriman driver yang dicatat.' : 'Hari ini tidak ada pengiriman driver yang dicatat.');
     periodDrivers.forEach((d, i) => {
-      lines.push(`${i + 1}. ${isWeek ? `[${d.date}] ` : ''}${d.name} → ${d.dest}${d.veh ? ` (${d.veh})` : ''}${d.note ? ` — ${d.note}` : ''}`);
+      lines.push(`${i + 1}. ${isMulti ? `[${d.date}] ` : ''}${d.name} → ${d.dest}${d.veh ? ` (${d.veh})` : ''}${d.note ? ` — ${d.note}` : ''}`);
     });
     lines.push('');
     const withQty = periodEntries.filter((e) => e.qty !== null && e.qty !== undefined).length;
@@ -621,6 +639,7 @@ export default function Page() {
   function downloadXlsx() {
     try {
       const isWeek = period.mode === 'week';
+      const isMonth = period.mode === 'month';
       const wb = XLSX.utils.book_new();
       wb.Props = {
         Title: `Hasil Kerja Karyawan — ${period.label}`,
@@ -633,7 +652,7 @@ export default function Page() {
         aoaWork.push([e.date, e.shift, e.time || '', e.names.join(', '), e.machine || '', e.job, e.qty === null || e.qty === undefined ? '' : e.qty, e.unit || '', e.note || '']);
       });
       if (!periodEntries.length) {
-        aoaWork.push([period.start, '', '', '', '', isWeek ? 'Belum ada catatan hasil kerja pada minggu ini' : 'Belum ada catatan hasil kerja pada tanggal ini', '', '', '']);
+        aoaWork.push([period.start, '', '', '', '', isWeek ? 'Belum ada catatan hasil kerja pada minggu ini' : isMonth ? 'Belum ada catatan hasil kerja pada bulan ini' : 'Belum ada catatan hasil kerja pada tanggal ini', '', '', '']);
       }
       const wsWork = XLSX.utils.aoa_to_sheet(aoaWork);
       wsWork['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 30 }, { wch: 22 }, { wch: 38 }, { wch: 12 }, { wch: 10 }, { wch: 44 }];
@@ -645,7 +664,7 @@ export default function Page() {
         aoaDrv.push([d.date, d.name, d.dest, d.veh || '', d.note || '']);
       });
       if (!periodDrivers.length) {
-        aoaDrv.push([period.start, '', isWeek ? 'Tidak ada pengiriman driver yang dicatat pada minggu ini' : 'Tidak ada pengiriman driver yang dicatat pada tanggal ini', '', '']);
+        aoaDrv.push([period.start, '', isWeek ? 'Tidak ada pengiriman driver yang dicatat pada minggu ini' : isMonth ? 'Tidak ada pengiriman driver yang dicatat pada bulan ini' : 'Tidak ada pengiriman driver yang dicatat pada tanggal ini', '', '']);
       }
       const wsDrv = XLSX.utils.aoa_to_sheet(aoaDrv);
       wsDrv['!cols'] = [{ wch: 12 }, { wch: 26 }, { wch: 42 }, { wch: 24 }, { wch: 44 }];
@@ -654,7 +673,7 @@ export default function Page() {
 
       const aoaSum = [];
       aoaSum.push(['Rekap Hasil Kerja Karyawan — PT Meleo Mahkota Abadi']);
-      aoaSum.push([isWeek ? 'Periode (per minggu)' : 'Tanggal', period.label]);
+      aoaSum.push([isWeek ? 'Periode (per minggu)' : isMonth ? 'Periode (per bulan)' : 'Tanggal', period.label]);
       if (qName) aoaSum.push(['Pencarian nama karyawan', rsearch.trim()]);
       if (qMachine) aoaSum.push(['Pencarian nama mesin', rmachine.trim()]);
       aoaSum.push([]);
@@ -686,7 +705,7 @@ export default function Page() {
         aoaSum.push(['Peringkat', 'Karyawan', 'Total', 'Satuan']);
         groups.forEach((g, i) => { aoaSum.push([i + 1, g.names.join(', '), g.val, unit]); });
       });
-      if (!anyRank) aoaSum.push([isWeek ? 'Belum ada hasil terukur pada minggu ini.' : 'Belum ada hasil terukur pada tanggal ini.']);
+      if (!anyRank) aoaSum.push([isWeek ? 'Belum ada hasil terukur pada minggu ini.' : isMonth ? 'Belum ada hasil terukur pada bulan ini.' : 'Belum ada hasil terukur pada tanggal ini.']);
       const wsSum = XLSX.utils.aoa_to_sheet(aoaSum);
       wsSum['!cols'] = [{ wch: 42 }, { wch: 38 }, { wch: 16 }, { wch: 12 }];
       wsSum['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
@@ -1023,11 +1042,12 @@ export default function Page() {
                 <div style={S.segWrap}>
                   <button type="button" style={S.segBtn(rekapMode === 'day')} onClick={() => setRekapMode('day')}>Per Hari</button>
                   <button type="button" style={S.segBtn(rekapMode === 'week')} onClick={() => setRekapMode('week')}>Per Minggu</button>
+                  <button type="button" style={S.segBtn(rekapMode === 'month')} onClick={() => setRekapMode('month')}>Per Bulan</button>
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0 16px' }}>
                 <div>
-                  <label style={S.label} htmlFor="rdate">{period.mode === 'week' ? 'Tanggal dalam minggu' : 'Tanggal rekap'}</label>
+                  <label style={S.label} htmlFor="rdate">{period.mode === 'week' ? 'Tanggal dalam minggu' : period.mode === 'month' ? 'Tanggal dalam bulan' : 'Tanggal rekap'}</label>
                   <input type="date" id="rdate" style={S.input} value={rdate} onChange={(e) => setRdate(e.target.value)} />
                 </div>
                 <div>
@@ -1040,9 +1060,9 @@ export default function Page() {
                 </div>
               </div>
               <p style={{ fontSize: 14, color: '#111827', margin: '4px 0 12px' }}>
-                {period.mode === 'week' ? 'Menampilkan per minggu (Senin–Minggu): ' : 'Menampilkan per hari: '}
+                {period.mode === 'week' ? 'Menampilkan per minggu (Senin–Minggu): ' : period.mode === 'month' ? 'Menampilkan per bulan: ' : 'Menampilkan per hari: '}
                 <b>{period.label}</b>
-                {period.mode === 'week' ? ' — pilih hari apa saja di dalam minggu itu.' : ''}
+                {period.mode === 'week' ? ' — pilih hari apa saja di dalam minggu itu.' : period.mode === 'month' ? ' — pilih hari apa saja di dalam bulan itu.' : ''}
               </p>
               {(qName || qMachine) && (
                 <p style={{ fontSize: 13, color: '#4b5563' }}>
@@ -1050,9 +1070,9 @@ export default function Page() {
                 </p>
               )}
 
-              {period.mode === 'week' && (
+              {period.mode !== 'day' && (
                 <div>
-                  <div style={S.secttl}>Ringkasan per Hari dalam Minggu</div>
+                  <div style={S.secttl}>{period.mode === 'week' ? 'Ringkasan per Hari dalam Minggu' : 'Ringkasan per Hari dalam Bulan'}</div>
                   <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none' }}>
                     {period.dates.map((dstr) => {
                       const dayList = periodEntries.filter((e) => e.date === dstr);
@@ -1067,21 +1087,21 @@ export default function Page() {
                 </div>
               )}
 
-              <div style={S.secttl}>Shift 1 — {s1.length} catatan{period.mode === 'week' ? ' (minggu ini)' : ''}</div>
-              {!s1.length && <div style={S.empty}>Belum ada catatan Shift 1{period.mode === 'week' ? ' pada minggu ini.' : ' pada tanggal ini.'}{(qName || qMachine) ? ' untuk pencarian yang aktif.' : ''}</div>}
-              {s1.map((e) => entryCard(e, period.mode === 'week', startEditEntry, deleteEntry))}
+              <div style={S.secttl}>Shift 1 — {s1.length} catatan{period.mode === 'week' ? ' (minggu ini)' : period.mode === 'month' ? ' (bulan ini)' : ''}</div>
+              {!s1.length && <div style={S.empty}>Belum ada catatan Shift 1{period.mode === 'week' ? ' pada minggu ini.' : period.mode === 'month' ? ' pada bulan ini.' : ' pada tanggal ini.'}{(qName || qMachine) ? ' untuk pencarian yang aktif.' : ''}</div>}
+              {s1.map((e) => entryCard(e, period.mode !== 'day', startEditEntry, deleteEntry))}
               {s1.length > 0 && <div style={S.totals}>Total: <b>{totalsText(totalsOf(s1))}</b></div>}
 
-              <div style={S.secttl}>Shift 2 — {s2.length} catatan{period.mode === 'week' ? ' (minggu ini)' : ''}</div>
-              {!s2.length && <div style={S.empty}>Belum ada catatan Shift 2{period.mode === 'week' ? ' pada minggu ini.' : ' pada tanggal ini.'}{(qName || qMachine) ? ' untuk pencarian yang aktif.' : ''}</div>}
-              {s2.map((e) => entryCard(e, period.mode === 'week', startEditEntry, deleteEntry))}
+              <div style={S.secttl}>Shift 2 — {s2.length} catatan{period.mode === 'week' ? ' (minggu ini)' : period.mode === 'month' ? ' (bulan ini)' : ''}</div>
+              {!s2.length && <div style={S.empty}>Belum ada catatan Shift 2{period.mode === 'week' ? ' pada minggu ini.' : period.mode === 'month' ? ' pada bulan ini.' : ' pada tanggal ini.'}{(qName || qMachine) ? ' untuk pencarian yang aktif.' : ''}</div>}
+              {s2.map((e) => entryCard(e, period.mode !== 'day', startEditEntry, deleteEntry))}
               {s2.length > 0 && <div style={S.totals}>Total: <b>{totalsText(totalsOf(s2))}</b></div>}
 
-              <div style={S.secttl}>Pengiriman Driver — {periodDrivers.length} catatan{period.mode === 'week' ? ' (minggu ini)' : ''}</div>
-              {!periodDrivers.length && <div style={S.empty}>{period.mode === 'week' ? 'Tidak ada pengiriman driver yang dicatat pada minggu ini.' : 'Tidak ada pengiriman driver yang dicatat pada tanggal ini.'}</div>}
+              <div style={S.secttl}>Pengiriman Driver — {periodDrivers.length} catatan{period.mode === 'week' ? ' (minggu ini)' : period.mode === 'month' ? ' (bulan ini)' : ''}</div>
+              {!periodDrivers.length && <div style={S.empty}>{period.mode === 'week' ? 'Tidak ada pengiriman driver yang dicatat pada minggu ini.' : period.mode === 'month' ? 'Tidak ada pengiriman driver yang dicatat pada bulan ini.' : 'Tidak ada pengiriman driver yang dicatat pada tanggal ini.'}</div>}
               {periodDrivers.map((d) => (
                 <div key={d.id} style={S.entry}>
-                  {period.mode === 'week' && <span style={S.dateTag}>{fmtDateLong(d.date)}</span>}
+                  {period.mode !== 'day' && <span style={S.dateTag}>{fmtDateLong(d.date)}</span>}
                   <div style={S.job}>{d.name} → {d.dest}</div>
                   <div style={S.who}>{d.veh ? `Kendaraan: ${d.veh}` : 'Pengiriman driver'}</div>
                   {d.note ? <div style={S.note}>Keterangan: {d.note}</div> : null}
@@ -1092,7 +1112,7 @@ export default function Page() {
                 </div>
               ))}
 
-              <div style={S.secttl}>{period.mode === 'week' ? 'Peringkat per Karyawan — Minggu Ini (gabungan Shift 1 + 2)' : 'Peringkat per Karyawan (gabungan Shift 1 + 2)'}</div>
+              <div style={S.secttl}>{period.mode === 'week' ? 'Peringkat per Karyawan — Minggu Ini (gabungan Shift 1 + 2)' : period.mode === 'month' ? 'Peringkat per Karyawan — Bulan Ini (gabungan Shift 1 + 2)' : 'Peringkat per Karyawan (gabungan Shift 1 + 2)'}</div>
               {rankBlock(rekapRank)}
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 20 }}>
@@ -1101,7 +1121,7 @@ export default function Page() {
                 <button type="button" style={S.btnSec} onClick={downloadCsv}>Unduh CSV</button>
                 <button type="button" style={S.btnSec} onClick={downloadXlsx}>Unduh Excel (.xlsx)</button>
               </div>
-              <p style={{ ...S.hint, margin: '12px 0 0' }}>Unduhan &amp; salinan mengikuti tampilan yang dipilih (per hari / per minggu) dan pencarian (nama karyawan / nama mesin) yang aktif di atas. File Excel berisi 3 sheet: <strong>Hasil Kerja</strong>, <strong>Driver</strong>, dan <strong>Ringkasan</strong> (total &amp; peringkat).</p>
+              <p style={{ ...S.hint, margin: '12px 0 0' }}>Unduhan &amp; salinan mengikuti tampilan yang dipilih (per hari / per minggu / per bulan) dan pencarian (nama karyawan / nama mesin) yang aktif di atas. File Excel berisi 3 sheet: <strong>Hasil Kerja</strong>, <strong>Driver</strong>, dan <strong>Ringkasan</strong> (total &amp; peringkat).</p>
             </div>
           )}
 
