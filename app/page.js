@@ -313,12 +313,17 @@ export default function Page() {
     if (!loadedRef.current) return;
     setSaving(true);
     try {
-      await fetch('/api/data', {
+      const res = await fetch('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(next),
       });
-    } catch { /* simpan gagal: data tetap di layar, coba lagi saat perubahan berikut */ }
+      if (!res.ok) throw new Error('save failed');
+    } catch {
+      // Kegagalan simpan harus terlihat pengguna: entry hanya tampil di layar
+      // dan akan hilang saat refresh bila tidak tersimpan di server.
+      showToast('Gagal menyimpan ke server — coba lagi.');
+    }
     setSaving(false);
   }
 
